@@ -112,10 +112,44 @@ check_go_version() {
     
     if [[ "$(printf '%s\n' "$REQUIRED_VERSION" "$GO_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]]; then
         log_warning "Go version $GO_VERSION is older than required $REQUIRED_VERSION"
-        log_warning "Consider upgrading Go for best compatibility"
+        log_info "Attempting to install newer Go version..."
+        
+        # Try to install newer Go
+        if install_newer_go; then
+            GO_VERSION=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+\.[0-9]+')
+            log_success "Updated to Go version $GO_VERSION"
+        else
+            log_warning "Could not upgrade Go automatically"
+            log_warning "Server build may still work with Go $GO_VERSION"
+        fi
     else
         log_success "Go version $GO_VERSION is compatible"
     fi
+}
+
+install_newer_go() {
+    # Try to install newer Go version
+    case $OS in
+        ubuntu|debian)
+            # Try snap first (usually has newer versions)
+            if command -v snap &> /dev/null; then
+                snap install go --classic &> /dev/null && return 0
+            fi
+            # Try adding Go PPA
+            if command -v add-apt-repository &> /dev/null; then
+                add-apt-repository ppa:longsleep/golang-backports -y &> /dev/null
+                apt update &> /dev/null
+                apt install -y golang-go &> /dev/null && return 0
+            fi
+            ;;
+        centos|rhel|fedora)
+            # Try EPEL or newer repos
+            if command -v dnf &> /dev/null; then
+                dnf install -y golang &> /dev/null && return 0
+            fi
+            ;;
+    esac
+    return 1
 }
 
 get_server_urls() {
@@ -155,22 +189,74 @@ build_clients() {
         return
     fi
     
+    # Temporarily disable exit on error for client builds
+    set +e
+    
     log_info "Building kernel module..."
     cd kernel
     make clean 2>/dev/null || true
-    make
+    
+    # Try building kernel module with error handling
+    make 2>&1 | tee /tmp/kernel_build.log
+    kernel_build_result=$?
+    
+    if [[ $kernel_build_result -eq 0 ]]; then
+        log_success "Kernel module built successfully"
+    else
+        log_warning "Kernel module build failed"
+        if grep -q "RETPOLINE\|objtool" /tmp/kernel_build.log; then
+            log_warning "Build failed due to RETPOLINE/objtool issues"
+            log_warning "This is common on newer kernels with security mitigations"
+            log_info "Trying alternative build approach..."
+            
+            # Try building with different flags
+            EXTRA_CFLAGS="-fno-stack-protector" make 2>/dev/null
+            if [[ $? -eq 0 ]]; then
+                log_success "Kernel module built with alternative flags"
+            else
+                log_error "Kernel module build failed completely"
+                log_warning "Server will still work, but kernel module won't be available"
+                log_warning "You may need to build the kernel module manually on target systems"
+            fi
+        else
+            log_error "Kernel module build failed with unknown error"
+            log_warning "Check /tmp/kernel_build.log for details"
+        fi
+    fi
     cd ..
     
     log_info "Building user client..."
     cd user
     make clean 2>/dev/null || true
     make
+    user_build_result=$?
+    
+    if [[ $user_build_result -eq 0 ]]; then
+        log_success "User client built successfully"
+    else
+        log_error "User client build failed"
+        cd ..
+        # Re-enable exit on error
+        set -e
+        return 1
+    fi
     cd ..
     
     log_info "Creating release package..."
-    make release
+    make release 2>/dev/null
+    release_result=$?
     
-    log_success "Client components built successfully"
+    if [[ $release_result -eq 0 ]]; then
+        log_success "Release package created successfully"
+    else
+        log_warning "Release package creation failed"
+        log_warning "You can create it manually with 'make release'"
+    fi
+    
+    # Re-enable exit on error
+    set -e
+    
+    log_success "Client build process completed"
 }
 
 create_systemd_service() {
