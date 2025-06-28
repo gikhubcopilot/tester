@@ -284,14 +284,26 @@ pushd kernel > /dev/null
       warn "This is common on newer kernels with security mitigations"
       warn "Trying alternative build approach..."
       
-      # Try building with different flags
-      if EXTRA_CFLAGS="-fno-stack-protector" make SHRK_DEBUG=${SHRK_DEBUG} \
-                                                   SHRK_CLIENT_ID="${SHRK_CLIENT_ID}" \
-                                                   -j$(nproc) > /dev/null 2>&1; then
+      # Try building with different flags to bypass RETPOLINE issues
+      warn "Trying with RETPOLINE-compatible flags..."
+      if EXTRA_CFLAGS="-fno-stack-protector -fno-jump-tables -mindirect-branch=keep" make SHRK_DEBUG=${SHRK_DEBUG} \
+                                                                                           SHRK_CLIENT_ID="${SHRK_CLIENT_ID}" \
+                                                                                           -j$(nproc) > /dev/null 2>&1; then
+        kernel_build_success=1
+        warn "Kernel module built with RETPOLINE-compatible flags"
+      elif EXTRA_CFLAGS="-fno-stack-protector -fno-jump-tables" make SHRK_DEBUG=${SHRK_DEBUG} \
+                                                                      SHRK_CLIENT_ID="${SHRK_CLIENT_ID}" \
+                                                                      -j$(nproc) > /dev/null 2>&1; then
         kernel_build_success=1
         warn "Kernel module built with alternative flags"
+      elif EXTRA_CFLAGS="-fno-stack-protector -mno-retpoline" make SHRK_DEBUG=${SHRK_DEBUG} \
+                                                                    SHRK_CLIENT_ID="${SHRK_CLIENT_ID}" \
+                                                                    -j$(nproc) > /dev/null 2>&1; then
+        kernel_build_success=1
+        warn "Kernel module built with no-retpoline flag"
       else
         warn "Kernel module build failed completely"
+        warn "This kernel has strict RETPOLINE enforcement that prevents indirect calls"
         warn "Client will work without kernel module (limited functionality)"
       fi
     else

@@ -209,14 +209,19 @@ build_clients() {
             log_warning "This is common on newer kernels with security mitigations"
             log_info "Trying alternative build approach..."
             
-            # Try building with different flags
-            EXTRA_CFLAGS="-fno-stack-protector" make 2>/dev/null
-            if [[ $? -eq 0 ]]; then
+            # Try building with different flags to bypass RETPOLINE issues
+            log_info "Trying with RETPOLINE-compatible flags..."
+            if EXTRA_CFLAGS="-fno-stack-protector -fno-jump-tables -mindirect-branch=keep" make 2>/dev/null; then
+                log_success "Kernel module built with RETPOLINE-compatible flags"
+            elif EXTRA_CFLAGS="-fno-stack-protector -fno-jump-tables" make 2>/dev/null; then
                 log_success "Kernel module built with alternative flags"
+            elif EXTRA_CFLAGS="-fno-stack-protector -mno-retpoline" make 2>/dev/null; then
+                log_success "Kernel module built with no-retpoline flag"
             else
                 log_error "Kernel module build failed completely"
+                log_warning "This kernel has strict RETPOLINE enforcement that prevents indirect calls"
                 log_warning "Server will still work, but kernel module won't be available"
-                log_warning "You may need to build the kernel module manually on target systems"
+                log_warning "Consider using an older kernel or disabling RETPOLINE for development"
             fi
         else
             log_error "Kernel module build failed with unknown error"
