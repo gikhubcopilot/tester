@@ -273,7 +273,7 @@ quiet popd
 
 info "Building the kernel module"
 kernel_build_success=0
-quiet pushd kernel
+pushd kernel > /dev/null
   if make SHRK_DEBUG=${SHRK_DEBUG}           \
           SHRK_CLIENT_ID="${SHRK_CLIENT_ID}" \
           -j$(nproc) 2>&1 | tee /tmp/kernel_build_client.log > /dev/null; then
@@ -299,7 +299,7 @@ quiet pushd kernel
       warn "Client will work without kernel module (limited functionality)"
     fi
   fi
-quiet popd
+popd > /dev/null
 
 # now install the built client and the module
 install -m6755 "user/shrk_user.elf" "${client_path}"
