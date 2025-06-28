@@ -63,6 +63,7 @@ The script will:
 - ✅ Create systemd service for auto-start
 - ✅ Configure firewall rules
 - ✅ Create a manual start script
+- ✅ Handle kernel module build failures gracefully
 
 ### Option 2: Manual Installation
 
@@ -124,6 +125,13 @@ The script will:
    ```
 
    **Note:** The kernel module and user client are built for deployment on target systems. The server runs on your VPS to provide the C2 infrastructure and web interface.
+
+**Important:** After updating the installation scripts, restart the server to ensure client installations use the latest version:
+```bash
+systemctl restart shrk
+# or if running manually:
+./start-shrk.sh
+```
 
 4. **Optional: Create a systemd service for auto-start:**
    ```bash
